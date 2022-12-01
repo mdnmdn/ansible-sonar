@@ -1,0 +1,82 @@
+---
+- name: Ensures sonar root dir exists
+  file:
+    path: "{{ sonarqube_data_root }}"
+    state: directory
+    owner: "{{ user }}"
+    group: "{{ group }}"
+
+- name: Ensures sonar dir exists
+  file:
+    path: "{{ sonarqube_data_sonar }}"
+    state: directory
+    owner: "{{ user }}"
+    group: "{{ group }}"
+
+- name: Ensures sonar postgres dir exists
+  file:
+    path: "{{ sonarqube_data_postgres }}/initdb"
+    state: directory
+    owner: "{{ user }}"
+    group: "{{ group }}"
+
+
+- name: add db setup script
+  template:
+    src: 01_create_sonar_db.sql.j2
+    dest: "{{ sonarqube_data_postgres }}/initdb/01_create_sonar_db.sql"
+#    mode: 0600
+
+- name: set sysctl settings
+  ansible.posix.sysctl:
+    name: vm.max_map_count
+    value: '262144'
+    sysctl_set: yes
+    state: present
+    reload: yes
+
+
+
+- name: Create the sonarqube network
+  docker_network:
+    name: sonarqube
+
+- name: launch postgres container
+  docker_container:
+    name: sonar_pg
+    image: postgres:14
+    env:
+      POSTGRES_USER: "{{ sonarqube_postgres_user }}"
+      POSTGRES_PASSWORD: "{{ sonarqube_postgres_password }}"
+    restart_policy: unless-stopped
+    recreate: true
+    ports:
+      - "5432:5432"
+    networks:
+      - name: sonarqube
+    volumes:
+      - "{{ sonarqube_data_postgres }}/initdb:/docker-entrypoint-initdb.d"
+      - "{{ sonarqube_data_postgres }}/data:/var/lib/postgresql/data"
+
+- name: launch sonarqube container
+  docker_container:
+    name: sonarqube
+    image: sonarqube:8.9.3-community
+    env:
+      SONAR_JDBC_URL: jdbc:postgresql://sonar_pg/sonarqube
+      SONAR_JDBC_USERNAME: "{{ sonarqube_postgres_user }}"
+      SONAR_JDBC_PASSWORD: "{{ sonarqube_postgres_password }}"
+    restart_policy: unless-stopped
+    recreate: true
+    ports:
+      - "9000:9000"
+    networks:
+      - name: sonarqube
+      - name: web
+    volumes:
+      - "{{ sonarqube_data_sonar }}/data:/opt/sonarqube/data"
+      - "{{ sonarqube_data_sonar }}/logs:/opt/sonarqube/logs"
+      - "{{ sonarqube_data_sonar }}/extensions:/opt/sonarqube/extensions"
+    labels:
+      traefik.http.routers.sonarqube.rule: "Host(`{{ acme_domain }}`)"
+      traefik.enable: "true"

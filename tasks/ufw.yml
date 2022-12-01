@@ -1,0 +1,38 @@
+---
+
+# to verify ufw configuration run:
+# sudo ufw status verbose
+
+- name: "UFW: Install"
+  apt: package=ufw state=present
+  tags: ufw
+
+- name: "UFW: Configure defaults"
+  tags: ufw
+  ufw: direction={{ item.direction }} policy={{ item.policy }}
+  with_items:
+    - { direction: 'incoming', policy: 'deny' }
+    - { direction: 'outgoing', policy: 'allow' }
+  notify:
+    - restart ufw
+
+- name: "UFW Configure rules"
+  tags: ufw
+  ufw: rule={{ item.rule }} port={{ item.port }} proto={{ item.proto }}
+  with_items:
+    #- { rule: 'limit', port: '{{ ssh_port | default("22") }}', proto: 'tcp' }
+    - { rule: 'allow', port: '{{ ssh_port | default("22") }}', proto: 'tcp' }
+    - { rule: 'allow', port: '80', proto: 'tcp' }
+    - { rule: 'allow', port: '443', proto: 'tcp' }
+  notify:
+    - restart ufw
+
+#- name: "UFW: Enable logging"
+#  tags: ufw
+#  ufw: logging=on
+#  notify:
+#    - restart ufw
+
+- name: "UFW: Enable"
+  tags: ufw
+  ufw: state=enabled
